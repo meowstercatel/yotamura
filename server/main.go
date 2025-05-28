@@ -20,8 +20,12 @@ type Client struct {
 }
 
 type Message struct {
-	Operation int
-	Data      interface{}
+	Operation int         `json:"operation"`
+	Data      interface{} `json:"data"`
+}
+type CommandData struct {
+	Command string `json:"command"`
+	Output  string `json:"output"`
 }
 
 var clients []Client

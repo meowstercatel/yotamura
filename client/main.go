@@ -1,76 +1,110 @@
 package main
 
 import (
+	"encoding/json"
 	"flag"
-	"log"
+	"fmt"
 	"net/url"
 	"os"
 	"os/signal"
+	"syscall"
 	"time"
+	"yotamura/common"
 
 	"github.com/gorilla/websocket"
 )
 
 var addr = flag.String("addr", "localhost:8080", "http service address")
 
+type Client struct {
+	Ws   *websocket.Conn `json:"-"`
+	Name string          `json:"name"`
+	Info string          `json:"info"`
+
+	Message chan common.Message `json:"-"`
+}
+
+var client Client
+
 func main() {
 	flag.Parse()
-	log.SetFlags(0)
 
 	interrupt := make(chan os.Signal, 1)
 	signal.Notify(interrupt, os.Interrupt)
 
 	u := url.URL{Scheme: "ws", Host: *addr, Path: "/ws"}
-	log.Printf("connecting to %s", u.String())
+	fmt.Printf("connecting to %s", u.String())
 
 	c, _, err := websocket.DefaultDialer.Dial(u.String(), nil)
 	if err != nil {
-		log.Fatal("dial:", err)
+		fmt.Println("dial:", err)
+		fmt.Println("reconnecting in 10s")
+		time.Sleep(10 * time.Second)
+		go main()
 	}
 	defer c.Close()
 
 	done := make(chan struct{})
 
+	client = Client{Ws: c}
 	go func() {
 		defer close(done)
 		for {
-			_, message, err := c.ReadMessage()
+			_, msg, err := c.ReadMessage()
 			if err != nil {
-				log.Println("read:", err)
+				fmt.Println("read:", err)
+				// fmt.Printf("%t", err)
+				fmt.Println("reconnecting in 10s")
+				time.Sleep(10 * time.Second)
+				go main()
 				return
 			}
-			log.Printf("recv: %s", message)
+
+			message := common.Message{}
+			err = json.Unmarshal(msg, &message)
+			if err != nil {
+				fmt.Println("error when converting message to json")
+			}
+			client.Message <- message
+			fmt.Printf("recv: %s", msg)
 		}
 	}()
 
-	ticker := time.NewTicker(time.Second)
-	defer ticker.Stop()
+	channel := make(chan os.Signal, 1)
+	signal.Notify(channel, os.Interrupt, syscall.SIGTERM)
 
-	for {
-		select {
-		case <-done:
-			return
-		case t := <-ticker.C:
-			err := c.WriteMessage(websocket.TextMessage, []byte(t.String()))
-			if err != nil {
-				log.Println("write:", err)
-				return
-			}
-		case <-interrupt:
-			log.Println("interrupt")
+	<-channel
+	os.Exit(0)
 
-			// Cleanly close the connection by sending a close message and then
-			// waiting (with timeout) for the server to close the connection.
-			err := c.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""))
-			if err != nil {
-				log.Println("write close:", err)
-				return
-			}
-			select {
-			case <-done:
-			case <-time.After(time.Second):
-			}
-			return
-		}
-	}
+	// ticker := time.NewTicker(time.Second)
+	// defer ticker.Stop()
+
+	// for {
+	// 	select {
+	// 	case <-done:
+	// 		return
+	// 	case t := <-ticker.C:
+	// 		fmt.Println(t)
+	// 		 err := c.WriteMessage(websocket.TextMessage, []byte(t.String()))
+	// 		 if err != nil {
+	// 		 	fmt.Println("write:", err)
+	// 			return
+	// 		 }
+	// 	case <-interrupt:
+	// 		fmt.Println("interrupt")
+
+	// 		// Cleanly close the connection by sending a close message and then
+	// 		// waiting (with timeout) for the server to close the connection.
+	// 		err := c.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""))
+	// 		if err != nil {
+	// 			fmt.Println("write close:", err)
+	// 			return
+	// 		}
+	// 		select {
+	// 		case <-done:
+	// 		case <-time.After(time.Second):
+	// 		}
+	// 		return
+	// 	}
+	// }
 }

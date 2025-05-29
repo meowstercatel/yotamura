@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"slices"
 	"strconv"
+	"yotamura/common"
 
 	"github.com/gorilla/websocket"
 )
@@ -17,22 +18,11 @@ var addr = flag.String("addr", "localhost:8080", "http service address")
 var upgrader = websocket.Upgrader{} // use default options
 
 type Client struct {
-	Ws   *websocket.Conn
-	Name string
-	Info string
+	Ws   *websocket.Conn `json:"-"`
+	Name string          `json:"name"`
+	Info string          `json:"info"`
 
-	Message chan Message
-	//some flag for sending websocket messages
-	//its probably 0 or 1 but idc
-	Mt int
-}
-
-type Message struct {
-	Data interface{} `json:"data"`
-}
-type CommandData struct {
-	Command string `json:"command"`
-	Output  string `json:"output"`
+	Message chan common.Message `json:"-"`
 }
 
 // func (c *Client) handleMessage(mt int, msg []byte) {
@@ -56,7 +46,7 @@ type CommandData struct {
 // }
 
 func (c *Client) SendMessage(data []byte) error {
-	return c.Ws.WriteMessage(0, data)
+	return c.Ws.WriteMessage(1, data)
 }
 
 func (c *Client) HandleMessages() {
@@ -65,9 +55,9 @@ func (c *Client) HandleMessages() {
 		fmt.Println(message)
 
 		switch message.Data.(type) {
-		case CommandData:
+		case common.CommandData:
 			fmt.Println("command")
-			data := message.Data.(*CommandData)
+			data := message.Data.(*common.CommandData)
 			fmt.Println(data)
 		default:
 
@@ -91,6 +81,8 @@ func handle(w http.ResponseWriter, r *http.Request) {
 
 	client := Client{Ws: c}
 	clients = append(clients, client)
+
+	go client.HandleMessages()
 	for {
 		_, msg, err := c.ReadMessage()
 		if err != nil {
@@ -104,7 +96,7 @@ func handle(w http.ResponseWriter, r *http.Request) {
 			break
 		}
 
-		message := Message{}
+		message := common.Message{}
 		err = json.Unmarshal(msg, &message)
 		if err != nil {
 			fmt.Println("error when converting message to json")
@@ -129,18 +121,38 @@ func send(w http.ResponseWriter, r *http.Request) {
 
 	fmt.Println("got /send request")
 
-	message := Message{Data: CommandData{Command: command}}
+	message := common.Message{Data: common.CommandData{Command: command}}
 	jsonMessage, err := json.Marshal(message)
 	if err != nil { //this should never fail tho
 		fmt.Println("error while trying to marshal message")
 	}
-	clients[clientId].SendMessage(jsonMessage)
 
+	client := clients[clientId]
+	client.SendMessage(jsonMessage)
+
+	for {
+		response := <-client.Message
+		//the first response doesn't always have to be the command result
+		if command, ok := response.Data.(*common.CommandData); ok {
+			jsonResponse, _ := json.Marshal(command)
+			w.Write(jsonResponse)
+			return
+		}
+	}
+}
+
+func returnClients(w http.ResponseWriter, r *http.Request) {
+	jsonClients, err := json.Marshal(clients)
+	if err != nil {
+		fmt.Println("error converting clients to json")
+	}
+	w.Write(jsonClients)
 }
 
 func main() {
 	flag.Parse()
 	http.HandleFunc("/ws", handle)
 	http.HandleFunc("/send", send)
+	http.HandleFunc("/clients", returnClients)
 	log.Fatal(http.ListenAndServe(*addr, nil))
 }

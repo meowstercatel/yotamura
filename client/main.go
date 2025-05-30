@@ -13,6 +13,7 @@ import (
 	"yotamura/common"
 
 	"github.com/gorilla/websocket"
+	"github.com/mitchellh/mapstructure"
 )
 
 var addr = flag.String("addr", "localhost:8080", "http service address")
@@ -37,24 +38,46 @@ func (c *Client) runCommand(command string) {
 	if err != nil {
 		//handle err
 	}
-	message := common.Message{Data: common.CommandData{Command: command, Output: string(output)}}
-	jsonMessage, _ := json.Marshal(message) //this can't error
-	c.SendMessage(jsonMessage)
+	data := common.CommandData{Command: command, Output: string(output)}
+	c.SendJsonMessage(common.CreateMessage(data))
+	fmt.Println("sent command data")
+}
+
+func DecodeData(input any, output any) {
+	if err := mapstructure.Decode(input, output); err != nil {
+		fmt.Printf("Error decoding CommandData: %v\n", err)
+	}
 }
 
 func (c *Client) HandleMessages() {
 	for {
-		message := <-c.Message
+		// message := <-c.Message
+		message := c.GetWsMessage()
 		fmt.Println(message)
 
-		switch message.Data.(type) {
-		case common.CommandData:
-			fmt.Println("command")
-			data := message.Data.(*common.CommandData)
-			fmt.Println(data)
-			c.runCommand(data.Command)
-		default:
+		// switch message.Type {
+		// case "CommandData":
+		// 	fmt.Println("command")
+		// 	data := message.Data.(*common.CommandData)
+		// 	fmt.Println(data)
+		// 	c.runCommand(data.Command)
+		// default:
 
+		// }
+
+		switch message.Type {
+		case "CommandData":
+			fmt.Println("command")
+			var content common.CommandData
+			DecodeData(message.Data, &content)
+			c.runCommand(content.Command)
+		case "StatsData":
+			fmt.Println("stats")
+			var content common.StatsData
+			DecodeData(message.Data, &content)
+			c.Name = content.Name
+		default:
+			fmt.Printf("Unknown message type: %s\n", message.Type)
 		}
 	}
 }
@@ -65,8 +88,9 @@ func (c *Client) SendStats() {
 	//and possibly other things
 
 	hostname, _ := os.Hostname()
-	c.Name = hostname
+	// c.Name = hostname
 
+	c.SendJsonMessage(common.CreateMessage(common.StatsData{Name: hostname}))
 }
 
 func reconnect() {
@@ -96,13 +120,15 @@ func main() {
 
 	client := Client{
 		Client: &common.Client{
-			Ws:      c,
-			Message: make(chan common.Message),
+			Ws:             c,
+			Message:        make(chan common.Message),
+			MessageChannel: make(map[string]chan common.Message),
 		},
 	}
 
 	go client.HandleMessages()
 	fmt.Println("handle messages goroutine started")
+	go client.SendStats()
 	go func() {
 		defer close(done)
 		for {
@@ -119,7 +145,9 @@ func main() {
 			if err != nil {
 				fmt.Println("failed to convert message to struct")
 			}
-			client.Message <- message
+
+			// client.Message <- message
+			client.BroadcastWsMessage(message)
 		}
 	}()
 

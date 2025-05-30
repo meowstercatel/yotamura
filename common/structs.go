@@ -1,6 +1,7 @@
 package common
 
 type Message struct {
+	Type string      `json:"type"`
 	Data interface{} `json:"data"`
 }
 type CommandData struct {

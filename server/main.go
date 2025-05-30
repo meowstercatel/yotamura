@@ -10,6 +10,7 @@ import (
 	"yotamura/common"
 
 	"github.com/gorilla/websocket"
+	"github.com/mitchellh/mapstructure"
 )
 
 var addr = flag.String("addr", "localhost:8080", "http service address")
@@ -17,7 +18,7 @@ var addr = flag.String("addr", "localhost:8080", "http service address")
 var upgrader = websocket.Upgrader{} // use default options
 
 type Client struct {
-	common.Client
+	*common.Client
 }
 
 // func (c *Client) handleMessage(mt int, msg []byte) {
@@ -40,18 +41,29 @@ type Client struct {
 // 	}
 // }
 
+func DecodeData(input any, output any) error {
+	return mapstructure.Decode(input, output)
+}
+
 func (c *Client) HandleMessages() {
 	for {
-		message := <-c.Message
+		// message := <-c.Message
+		message := c.GetWsMessage()
 		fmt.Println(message)
 
-		switch message.Data.(type) {
-		case common.CommandData:
+		switch message.Type {
+		case "CommandData":
 			fmt.Println("command")
-			data := message.Data.(*common.CommandData)
-			fmt.Println(data)
+			var content common.CommandData
+			DecodeData(message.Data, &content)
+			fmt.Println(content)
+		case "StatsData":
+			fmt.Println("stats")
+			var content common.StatsData
+			DecodeData(message.Data, &content)
+			c.Name = content.Name
 		default:
-
+			fmt.Printf("Unknown message type: %s\n", message.Type)
 		}
 	}
 }
@@ -70,8 +82,13 @@ func handle(w http.ResponseWriter, r *http.Request) {
 	}
 	defer c.Close()
 
-	var client Client //Client{Ws: c} doesn't work here
-	client.Ws = c
+	client := Client{
+		Client: &common.Client{
+			Ws:             c,
+			Message:        make(chan common.Message),
+			MessageChannel: make(map[string]chan common.Message),
+		},
+	}
 
 	clients = append(clients, client)
 
@@ -81,14 +98,13 @@ func handle(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			if closeError, ok := err.(*websocket.CloseError); ok {
 				log.Printf("websocket closed! code: %d", closeError.Code)
-
-				for i, v := range clients {
-					if client == v {
-						RemoveIndex(clients, i)
-					}
-				}
 			} else {
 				log.Println("read err:", err)
+			}
+			for i, v := range clients {
+				if client.Name == v.Name {
+					clients = RemoveIndex(clients, i)
+				}
 			}
 			break
 		}
@@ -98,14 +114,8 @@ func handle(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			fmt.Println("failed to convert message to struct")
 		}
-		client.Message <- message
-		// client.handleMessage(mt, message)
-		// log.Printf("recv: %s", message)
-		// err = c.WriteMessage(mt, message)
-		// if err != nil {
-		// 	log.Println("write err:", err)
-		// 	break
-		// }
+		// client.Message <- message
+		client.BroadcastWsMessage(message)
 	}
 }
 
@@ -118,32 +128,33 @@ func send(w http.ResponseWriter, r *http.Request) {
 
 	fmt.Println("got /send request")
 
-	message := common.Message{Data: common.CommandData{Command: command}}
-	jsonMessage, err := json.Marshal(message)
-	if err != nil { //this should never fail tho
-		fmt.Println("error while trying to marshal message")
-	}
-
-	if len(clients) < int(clientId) {
+	if len(clients) <= int(clientId) {
 		w.Write([]byte("bad client id!"))
 		return
 	}
 
 	client := clients[clientId]
-	err = client.SendMessage(jsonMessage)
+	err := client.SendJsonMessage(common.CreateMessage(common.CommandData{Command: command}))
 	fmt.Println("sent message")
 	if err != nil {
 		fmt.Println("error when sending message", err)
 	}
 
 	for {
-		response := <-client.Message
+		// response := <-client.Message
+		fmt.Println("waiting for message")
+		response := client.GetWsMessage()
+		fmt.Println("/send: response: ", response)
 		//the first response doesn't always have to be the command result
-		if command, ok := response.Data.(*common.CommandData); ok {
-			jsonResponse, _ := json.Marshal(command)
-			w.Write(jsonResponse)
-			return
+		var content common.CommandData
+		err := DecodeData(response.Data, &content)
+		if err != nil {
+			fmt.Println("/send ERROR DECODING MESSAGE", err)
+			continue
 		}
+		jsonResponse, _ := json.Marshal(content)
+		w.Write(jsonResponse)
+		return
 	}
 }
 

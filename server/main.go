@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"log"
 	"net/http"
-	"slices"
 	"strconv"
 	"yotamura/common"
 
@@ -18,11 +17,7 @@ var addr = flag.String("addr", "localhost:8080", "http service address")
 var upgrader = websocket.Upgrader{} // use default options
 
 type Client struct {
-	Ws   *websocket.Conn `json:"-"`
-	Name string          `json:"name"`
-	Info string          `json:"info"`
-
-	Message chan common.Message `json:"-"`
+	common.Client
 }
 
 // func (c *Client) handleMessage(mt int, msg []byte) {
@@ -44,10 +39,6 @@ type Client struct {
 
 // 	}
 // }
-
-func (c *Client) SendMessage(data []byte) error {
-	return c.Ws.WriteMessage(1, data)
-}
 
 func (c *Client) HandleMessages() {
 	for {
@@ -79,7 +70,9 @@ func handle(w http.ResponseWriter, r *http.Request) {
 	}
 	defer c.Close()
 
-	client := Client{Ws: c}
+	var client Client //Client{Ws: c} doesn't work here
+	client.Ws = c
+
 	clients = append(clients, client)
 
 	go client.HandleMessages()
@@ -89,7 +82,11 @@ func handle(w http.ResponseWriter, r *http.Request) {
 			if closeError, ok := err.(*websocket.CloseError); ok {
 				log.Printf("websocket closed! code: %d", closeError.Code)
 
-				clients = RemoveIndex(clients, slices.Index(clients, client))
+				for i, v := range clients {
+					if client == v {
+						RemoveIndex(clients, i)
+					}
+				}
 			} else {
 				log.Println("read err:", err)
 			}
@@ -99,7 +96,7 @@ func handle(w http.ResponseWriter, r *http.Request) {
 		message := common.Message{}
 		err = json.Unmarshal(msg, &message)
 		if err != nil {
-			fmt.Println("error when converting message to json")
+			fmt.Println("failed to convert message to struct")
 		}
 		client.Message <- message
 		// client.handleMessage(mt, message)
@@ -127,8 +124,17 @@ func send(w http.ResponseWriter, r *http.Request) {
 		fmt.Println("error while trying to marshal message")
 	}
 
+	if len(clients) < int(clientId) {
+		w.Write([]byte("bad client id!"))
+		return
+	}
+
 	client := clients[clientId]
-	client.SendMessage(jsonMessage)
+	err = client.SendMessage(jsonMessage)
+	fmt.Println("sent message")
+	if err != nil {
+		fmt.Println("error when sending message", err)
+	}
 
 	for {
 		response := <-client.Message

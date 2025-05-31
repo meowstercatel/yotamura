@@ -82,7 +82,6 @@ func handle(w http.ResponseWriter, r *http.Request) {
 	client := Client{
 		Client: &common.Client{
 			Ws:             c,
-			Message:        make(chan common.Message),
 			MessageChannel: make(map[string]chan common.Message),
 		},
 	}

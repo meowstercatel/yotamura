@@ -21,3 +21,14 @@ type StatsData struct {
 type ErrorData struct {
 	Error string `json:"error"`
 }
+type File struct {
+	Name        string `json:"name"`
+	IsDirectory bool   `json:"is_directory"`
+}
+type FileData struct {
+	AbsolutePath string `json:"absolute_path"`
+	Files        []File `json:"files"`
+}
+type ReadFileData struct {
+	Path string `json:"path"`
+}

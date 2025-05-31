@@ -2,7 +2,9 @@ package common
 
 import (
 	"fmt"
+	"io"
 	"math/rand"
+	"os"
 	"strings"
 
 	"github.com/mitchellh/mapstructure"
@@ -29,4 +31,29 @@ func RandString(n int) string {
 		b[i] = letterRunes[rand.Intn(len(letterRunes))]
 	}
 	return string(b)
+}
+
+func CopyFile(src, dst string) (err error) {
+	// Open the source file.
+	in, err := os.Open(src)
+	if err != nil {
+		return
+	}
+	defer in.Close()
+
+	// Create the destination file.
+	out, err := os.Create(dst)
+	if err != nil {
+		return
+	}
+	defer func() {
+		cerr := out.Close()
+		if err == nil {
+			err = cerr
+		}
+	}()
+
+	// Copy the contents from the source to the destination.
+	_, err = io.Copy(out, in)
+	return
 }

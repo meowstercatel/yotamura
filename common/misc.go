@@ -57,3 +57,16 @@ func CopyFile(src, dst string) (err error) {
 	_, err = io.Copy(out, in)
 	return
 }
+
+func FileExists(path string) bool {
+	_, err := os.Stat(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return false
+		}
+		// Handle other potential errors here if needed
+		fmt.Println("Error checking path:", err)
+		return false
+	}
+	return true
+}

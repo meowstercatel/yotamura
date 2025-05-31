@@ -4,13 +4,12 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
-	"strconv"
 	"yotamura/common"
 
 	"github.com/gorilla/websocket"
-	"github.com/mitchellh/mapstructure"
 )
 
 var addr = flag.String("addr", "localhost:8080", "http service address")
@@ -21,33 +20,8 @@ type Client struct {
 	*common.Client
 }
 
-// func (c *Client) handleMessage(mt int, msg []byte) {
-// 	c.Mt = mt
-
-// 	message := Message{}
-// 	err := json.Unmarshal(msg, &message)
-// 	if err != nil {
-// 		fmt.Println("error parsing message")
-// 	}
-// 	switch message.Data.(type) {
-// 	case CommandData:
-// 		fmt.Println("command")
-// 		data := message.Data.(*CommandData)
-// 		fmt.Println(data)
-// 	case string:
-
-// 	default:
-
-// 	}
-// }
-
-func DecodeData(input any, output any) error {
-	return mapstructure.Decode(input, output)
-}
-
 func (c *Client) HandleMessages() {
 	for {
-		// message := <-c.Message
 		message := c.GetWsMessage()
 		fmt.Println(message)
 
@@ -55,16 +29,39 @@ func (c *Client) HandleMessages() {
 		case "CommandData":
 			fmt.Println("command")
 			var content common.CommandData
-			DecodeData(message.Data, &content)
+			common.DecodeData(message.Data, &content)
 			fmt.Println(content)
 		case "StatsData":
 			fmt.Println("stats")
 			var content common.StatsData
-			DecodeData(message.Data, &content)
+			common.DecodeData(message.Data, &content)
 			c.Name = content.Name
 		default:
 			fmt.Printf("Unknown message type: %s\n", message.Type)
 		}
+	}
+}
+
+func (c *Client) SendCommand(command string, waitForResponse bool) (common.CommandData, error) {
+	err := c.SendJsonMessage(common.CreateMessage(common.CommandData{Command: command}))
+	fmt.Println("sent message")
+	if err != nil {
+		return common.CommandData{}, err
+	}
+
+	if !waitForResponse {
+		return common.CommandData{}, nil
+	}
+	for {
+		fmt.Println("waiting for message")
+		response := c.GetWsMessage()
+		var content common.CommandData
+		err := common.DecodeData(response.Data, &content)
+		if err != nil {
+			//the first response doesn't always have to be the command result
+			continue
+		}
+		return content, nil
 	}
 }
 
@@ -114,47 +111,45 @@ func handle(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			fmt.Println("failed to convert message to struct")
 		}
-		// client.Message <- message
 		client.BroadcastWsMessage(message)
 	}
 }
 
 func send(w http.ResponseWriter, r *http.Request) {
-	query := r.URL.Query()
-
-	//shitty implementation for now
-	command := query.Get("command")
-	clientId, _ := strconv.ParseInt(query.Get("clientId"), 10, 32)
-
-	fmt.Println("got /send request")
-
-	if len(clients) <= int(clientId) {
-		w.Write([]byte("bad client id!"))
-		return
-	}
-
-	client := clients[clientId]
-	err := client.SendJsonMessage(common.CreateMessage(common.CommandData{Command: command}))
-	fmt.Println("sent message")
+	requestJson, err := io.ReadAll(r.Body)
 	if err != nil {
-		fmt.Println("error when sending message", err)
+		fmt.Println("failed to read request!", err)
+		w.WriteHeader(400)
+		w.Write([]byte("failed to read request!"))
+		return
+	}
+	var requestMessage common.RequestMessage
+	err = json.Unmarshal(requestJson, &requestMessage)
+	if err != nil {
+		fmt.Println("received bad data!", err)
+		w.WriteHeader(400)
+		w.Write([]byte("received bad data!"))
+		return
 	}
 
-	for {
-		// response := <-client.Message
-		fmt.Println("waiting for message")
-		response := client.GetWsMessage()
-		fmt.Println("/send: response: ", response)
-		//the first response doesn't always have to be the command result
+	switch requestMessage.Message.Type {
+	case "CommandData":
+		fmt.Println("command")
 		var content common.CommandData
-		err := DecodeData(response.Data, &content)
+		common.DecodeData(requestMessage.Message.Data, &content)
+		fmt.Println(content)
+		client := clients[requestMessage.SendTo]
+		response, err := client.SendCommand(content.Command, requestMessage.WaitForResponse)
 		if err != nil {
-			fmt.Println("/send ERROR DECODING MESSAGE", err)
-			continue
+			fmt.Println("sending command failed!", err)
+			w.WriteHeader(500)
+			w.Write(fmt.Appendf(nil, "sending command failed!, %v", err))
+			return
 		}
-		jsonResponse, _ := json.Marshal(content)
-		w.Write(jsonResponse)
-		return
+		responseJson, _ := json.Marshal(common.CreateMessage(response)) //no error = no problem
+		w.Write(responseJson)
+	default:
+		fmt.Printf("Unknown message type: %s\n", requestMessage.Message.Type)
 	}
 }
 

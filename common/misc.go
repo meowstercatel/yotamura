@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"math/rand"
 	"strings"
+
+	"github.com/mitchellh/mapstructure"
 )
 
 func GetType(variable any) string {
@@ -13,6 +15,10 @@ func GetType(variable any) string {
 
 func CreateMessage(data any) Message {
 	return Message{Type: GetType(data), Data: data}
+}
+
+func DecodeData(input any, output any) error {
+	return mapstructure.Decode(input, output)
 }
 
 var letterRunes = []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ")

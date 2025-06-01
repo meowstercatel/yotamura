@@ -6,14 +6,19 @@ type Message struct {
 }
 
 type RequestMessage struct {
-	Message         Message `json:"message"`
-	SendTo          int     `json:"send_to"` //client to send the message to
-	WaitForResponse bool    `json:"wait_for_response"`
+	Message Message `json:"message"`
+	SendTo  int     `json:"send_to"` //client to send the message to
+}
+
+type File struct {
+	Name        string `json:"name"`
+	IsDirectory bool   `json:"is_directory"`
 }
 
 type CommandData struct {
-	Command string `json:"command"`
-	Output  string `json:"output"`
+	Command       string `json:"command"`
+	Output        string `json:"output"`
+	WaitForOutput bool   `json:"wait_for_output"`
 }
 type StatsData struct {
 	Name string `json:"name"`
@@ -21,14 +26,11 @@ type StatsData struct {
 type ErrorData struct {
 	Error string `json:"error"`
 }
-type File struct {
-	Name        string `json:"name"`
-	IsDirectory bool   `json:"is_directory"`
-}
 type FileData struct {
-	AbsolutePath string `json:"absolute_path"`
-	Files        []File `json:"files"`
+	Path  string `json:"path"`
+	Files []File `json:"files"`
 }
 type ReadFileData struct {
-	Path string `json:"path"`
+	Path    string `json:"path"`
+	Content []byte `json:"content"`
 }

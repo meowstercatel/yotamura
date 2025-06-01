@@ -2,17 +2,30 @@ package common
 
 import (
 	"fmt"
+	"sync"
 
 	"github.com/gorilla/websocket"
 )
 
 type Client struct {
-	Ws   *websocket.Conn `json:"-"`
-	Name string          `json:"name"`
-	Info string          `json:"info"`
+	Ws      *websocket.Conn                  `json:"-"`
+	Name    string                           `json:"name"`
+	Info    string                           `json:"info"`
+	Actions map[string]func(message Message) `json:"-"`
 
-	Message        chan Message            `json:"-"`
 	MessageChannel map[string]chan Message `json:"-"`
+	mu             sync.RWMutex            `json:"-"`
+}
+
+func (c *Client) HandleMessages() {
+	for {
+		message := c.GetWsMessage()
+		fmt.Println("message: ", message)
+
+		if action, ok := c.Actions[message.Type]; ok {
+			action(message)
+		}
+	}
 }
 
 func (c *Client) SendMessage(data []byte) error {
@@ -27,37 +40,27 @@ func (c *Client) GetWsMessage() Message {
 	responseChannel := make(chan Message, 100)
 	randString := RandString(5)
 
+	c.mu.Lock()
 	c.MessageChannel[randString] = responseChannel
+	c.mu.Unlock()
 
-	message := <-responseChannel // This will block until BroadcastWsMessage sends
-	fmt.Println("GOT MESSAGE: ", message)
+	message := <-responseChannel
 
+	c.mu.Lock()
 	delete(c.MessageChannel, randString)
+	c.mu.Unlock()
+
 	return message
 }
 
 func (c *Client) BroadcastWsMessage(message Message) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
 	for _, ch := range c.MessageChannel {
 		select {
 		case ch <- message:
 		default:
-			// Channel full, message dropped (or you could make it blocking)
+			// Channel full, message dropped
 		}
 	}
 }
-
-// func (c *Client) HandleMessages() {
-// 	for {
-// 		message := <-c.Message
-// 		fmt.Println(message)
-
-// 		switch message.Data.(type) {
-// 		case common.CommandData:
-// 			fmt.Println("command")
-// 			data := message.Data.(*common.CommandData)
-// 			fmt.Println(data)
-// 		default:
-
-// 		}
-// 	}
-// }

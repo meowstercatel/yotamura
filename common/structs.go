@@ -26,11 +26,14 @@ type StatsData struct {
 type ErrorData struct {
 	Error string `json:"error"`
 }
-type FileData struct {
+type DirectoryData struct {
 	Path  string `json:"path"`
 	Files []File `json:"files"`
 }
 type ReadFileData struct {
 	Path    string `json:"path"`
 	Content []byte `json:"content"`
+}
+type ScreenshotData struct {
+	Screenshot []byte `json:"screenshot"`
 }

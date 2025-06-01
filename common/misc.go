@@ -2,12 +2,14 @@ package common
 
 import (
 	"fmt"
+	"image"
 	"io"
 	"math/rand"
 	"os"
 	"strings"
 
 	"github.com/mitchellh/mapstructure"
+	"golang.org/x/image/draw"
 )
 
 func GetType(variable any) string {
@@ -69,4 +71,24 @@ func FileExists(path string) bool {
 		return false
 	}
 	return true
+}
+
+func ResizeImage(img image.Image, width, height int) *image.RGBA {
+	bounds := img.Bounds()
+
+	if width == 0 && height == 0 {
+		return nil
+	}
+
+	if width == 0 {
+		width = bounds.Dx() * height / bounds.Dy()
+	}
+	if height == 0 {
+		height = bounds.Dy() * width / bounds.Dx()
+	}
+
+	newImg := image.NewRGBA(image.Rect(0, 0, width, height))
+	draw.CatmullRom.Scale(newImg, newImg.Bounds(), img, bounds, draw.Over, nil)
+
+	return newImg
 }

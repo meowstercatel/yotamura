@@ -54,15 +54,15 @@ func (c *Client) SendCommand(command string, waitForResponse bool) (common.Comma
 	}
 }
 
-func (c *Client) SendFileRequest(content common.FileData) (common.FileData, error) {
+func (c *Client) SendFileRequest(content common.DirectoryData) (common.DirectoryData, error) {
 	err := c.SendJsonMessage(common.CreateMessage(content))
 	if err != nil {
-		return common.FileData{}, err
+		return common.DirectoryData{}, err
 	}
 	for {
 		fmt.Println("waiting for message")
 		response := c.GetWsMessage()
-		var content common.FileData
+		var content common.DirectoryData
 		err := common.DecodeData(response.Data, &content)
 		if err != nil {
 			//the first response doesn't always have to be the command result

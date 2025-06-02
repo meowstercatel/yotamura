@@ -24,6 +24,7 @@ type StatsData struct {
 	Name string `json:"name"`
 }
 type ErrorData struct {
+	Type  string `json:"type"`
 	Error string `json:"error"`
 }
 type DirectoryData struct {

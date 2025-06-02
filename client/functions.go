@@ -6,6 +6,7 @@ import (
 	"image/jpeg"
 	"io"
 	"os"
+	"time"
 	"yotamura/common"
 
 	"github.com/JamesHovious/w32"
@@ -14,22 +15,12 @@ import (
 
 func MouseClick(click common.MouseClick) {
 	inputs := make([]w32.INPUT, 0)
-	downflag := 0
 	upflag := 0
 	if click == common.LClick {
-		downflag = w32.MOUSEEVENTF_LEFTDOWN
 		upflag = w32.MOUSEEVENTF_LEFTUP
 	}
 	if click == common.RClick {
-		downflag = w32.MOUSEEVENTF_RIGHTDOWN
 		upflag = w32.MOUSEEVENTF_RIGHTUP
-	}
-
-	down := w32.INPUT{
-		Type: w32.INPUT_MOUSE,
-		Mi: w32.MOUSEINPUT{
-			DwFlags: uint32(downflag),
-		},
 	}
 
 	up := w32.INPUT{
@@ -39,9 +30,72 @@ func MouseClick(click common.MouseClick) {
 		},
 	}
 
-	inputs = append(inputs, down)
 	inputs = append(inputs, up)
 	w32.SendInput(inputs)
+}
+func KeyboardPress(char rune) {
+	//i somehow need to figure out how to make shift and allat work
+	vk := w32.VkKeyScanW(uint16(char))
+	if vk == -1 {
+		return
+	}
+
+	virtualKeyCode := uint16(vk & 0xFF)
+	shiftState := uint16((vk >> 8) & 0xFF)
+
+	var inputs []w32.INPUT
+
+	// Press modifier keys if needed
+	if shiftState&1 == 1 {
+		inputs = append(inputs, w32.INPUT{
+			Type: w32.INPUT_KEYBOARD,
+			Ki:   w32.KEYBDINPUT{WVk: w32.VK_SHIFT, DwFlags: 0},
+		})
+	}
+	if shiftState&2 == 2 {
+		inputs = append(inputs, w32.INPUT{
+			Type: w32.INPUT_KEYBOARD,
+			Ki:   w32.KEYBDINPUT{WVk: w32.VK_CONTROL, DwFlags: 0},
+		})
+	}
+	if shiftState&4 == 4 {
+		inputs = append(inputs, w32.INPUT{
+			Type: w32.INPUT_KEYBOARD,
+			Ki:   w32.KEYBDINPUT{WVk: w32.VK_MENU, DwFlags: 0}, //(VK_MENU is Alt)
+		})
+	}
+
+	inputs = append(inputs, w32.INPUT{
+		Type: w32.INPUT_KEYBOARD,
+		Ki:   w32.KEYBDINPUT{WVk: virtualKeyCode, DwFlags: 0},
+	})
+
+	inputs = append(inputs, w32.INPUT{
+		Type: w32.INPUT_KEYBOARD,
+		Ki:   w32.KEYBDINPUT{WVk: virtualKeyCode, DwFlags: 0x02},
+	})
+
+	if shiftState&4 == 4 {
+		inputs = append(inputs, w32.INPUT{
+			Type: w32.INPUT_KEYBOARD,
+			Ki:   w32.KEYBDINPUT{WVk: w32.VK_MENU, DwFlags: 0x02},
+		})
+	}
+	if shiftState&2 == 2 {
+		inputs = append(inputs, w32.INPUT{
+			Type: w32.INPUT_KEYBOARD,
+			Ki:   w32.KEYBDINPUT{WVk: w32.VK_CONTROL, DwFlags: 0x02},
+		})
+	}
+	if shiftState&1 == 1 {
+		inputs = append(inputs, w32.INPUT{
+			Type: w32.INPUT_KEYBOARD,
+			Ki:   w32.KEYBDINPUT{WVk: w32.VK_SHIFT, DwFlags: 0x02},
+		})
+	}
+
+	w32.SendInput(inputs)
+	time.Sleep(10 * time.Millisecond)
 }
 
 func (c *Client) sendError(message common.Message, err error) {
@@ -123,5 +177,25 @@ func (c *Client) initializeHandlers() {
 		if content.Mouse.Click != 0 {
 			MouseClick(content.Mouse.Click)
 		}
+		keyboardInput := content.Keyboard.Input
+		if keyboardInput != "" {
+			for _, v := range keyboardInput {
+				KeyboardPress(v)
+			}
+		}
+
+		x := content.Mouse.X
+		y := content.Mouse.Y
+
+		if x != -1 {
+			_, currY, _ := w32.GetCursorPos()
+			w32.SetCursorPos(x, currY)
+		}
+		if y != -1 {
+			currX, _, _ := w32.GetCursorPos()
+			w32.SetCursorPos(currX, y)
+		}
+
+		c.SendJsonMessage(message)
 	}
 }

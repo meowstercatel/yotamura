@@ -46,28 +46,6 @@ func ExecBackground(command string) {
 
 }
 
-// func (c *Client) HandleMessages() {
-// 	for {
-// 		message := c.GetWsMessage()
-// 		fmt.Println(message)
-
-// 		c.Actions[message.Type](message)
-// 		// switch message.Type {
-// 		// case "CommandData":
-// 		// 	fmt.Println("command")
-// 		// 	var content common.CommandData
-// 		// 	common.DecodeData(message.Data, &content)
-// 		// 	c.runCommand(content.Command)
-// 		// case "FileData":
-// 		// 	fmt.Println("file")
-// 		// 	var content common.FileData
-// 		// 	common.DecodeData(message.Data, &content)
-// 		// default:
-// 		// 	fmt.Printf("Unknown message type: %s\n", message.Type)
-// 		// }
-// 	}
-// }
-
 func (c *Client) SendStats() {
 	//sends the information about this client
 	//such as the pc hostname

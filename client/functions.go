@@ -8,8 +8,41 @@ import (
 	"os"
 	"yotamura/common"
 
+	"github.com/JamesHovious/w32"
 	"github.com/kbinani/screenshot"
 )
+
+func MouseClick(click common.MouseClick) {
+	inputs := make([]w32.INPUT, 0)
+	downflag := 0
+	upflag := 0
+	if click == common.LClick {
+		downflag = w32.MOUSEEVENTF_LEFTDOWN
+		upflag = w32.MOUSEEVENTF_LEFTUP
+	}
+	if click == common.RClick {
+		downflag = w32.MOUSEEVENTF_RIGHTDOWN
+		upflag = w32.MOUSEEVENTF_RIGHTUP
+	}
+
+	down := w32.INPUT{
+		Type: w32.INPUT_MOUSE,
+		Mi: w32.MOUSEINPUT{
+			DwFlags: uint32(downflag),
+		},
+	}
+
+	up := w32.INPUT{
+		Type: w32.INPUT_MOUSE,
+		Mi: w32.MOUSEINPUT{
+			DwFlags: uint32(upflag),
+		},
+	}
+
+	inputs = append(inputs, down)
+	inputs = append(inputs, up)
+	w32.SendInput(inputs)
+}
 
 func (c *Client) sendError(message common.Message, err error) {
 	c.SendJsonMessage(common.CreateMessage(common.ErrorData{Type: message.Type, Error: err.Error()}))
@@ -81,5 +114,14 @@ func (c *Client) initializeHandlers() {
 		}
 
 		c.SendJsonMessage(common.CreateMessage(common.ScreenshotData{Screenshot: imageBytes}))
+	}
+	c.Actions["InputData"] = func(message common.Message) {
+		fmt.Println("input")
+		var content common.InputData
+		common.DecodeData(message.Data, &content)
+
+		if content.Mouse.Click != 0 {
+			MouseClick(content.Mouse.Click)
+		}
 	}
 }

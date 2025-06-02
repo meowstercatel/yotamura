@@ -38,3 +38,24 @@ type ReadFileData struct {
 type ScreenshotData struct {
 	Screenshot []byte `json:"screenshot"`
 }
+
+type MouseClick int
+
+const (
+	LClick MouseClick = 1
+	RClick MouseClick = 2
+)
+
+type MouseInput struct {
+	X     int        `json:"x"`
+	Y     int        `json:"y"`
+	Click MouseClick `json:"click"`
+}
+
+type KeyboardInput struct {
+	Input string `json:"input"`
+}
+type InputData struct {
+	Mouse    MouseInput    `json:"mouse"`
+	Keyboard KeyboardInput `json:"keyboard"`
+}

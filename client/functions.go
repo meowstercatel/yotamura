@@ -109,13 +109,9 @@ func (c *Client) initializeHandlers() {
 		fmt.Println("command")
 		var content common.CommandData
 		common.DecodeData(message.Data, &content)
-		if !content.WaitForOutput {
-			ExecBackground(content.Command)
-			c.SendJsonMessage(common.CreateMessage(content))
-			return
-		}
 		output, err := Exec(content.Command)
 		if err != nil {
+			fmt.Println(output, err)
 			c.sendError(message, err)
 			return
 		}

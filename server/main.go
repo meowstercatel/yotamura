@@ -80,7 +80,25 @@ func handle(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func CORS(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Add("Access-Control-Allow-Origin", "*")
+		w.Header().Add("Access-Control-Allow-Credentials", "true")
+		w.Header().Add("Access-Control-Allow-Headers", "Content-Type, Content-Length, Accept-Encoding, X-CSRF-Token, Authorization, accept, origin, Cache-Control, X-Requested-With")
+		w.Header().Add("Access-Control-Allow-Methods", "POST, GET, OPTIONS, PUT, DELETE")
+
+		if r.Method == "OPTIONS" {
+			http.Error(w, "No Content", http.StatusNoContent)
+			return
+		}
+
+		next(w, r)
+	}
+}
+
 func send(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+
 	requestJson, err := io.ReadAll(r.Body)
 	if err != nil {
 		fmt.Println("failed to read request!", err)
@@ -129,7 +147,7 @@ func returnClients(w http.ResponseWriter, r *http.Request) {
 func main() {
 	flag.Parse()
 	http.HandleFunc("/ws", handle)
-	http.HandleFunc("/send", send)
-	http.HandleFunc("/clients", returnClients)
+	http.HandleFunc("/send", CORS(send))
+	http.HandleFunc("/clients", CORS(returnClients))
 	log.Fatal(http.ListenAndServe(*addr, nil))
 }

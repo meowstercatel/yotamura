@@ -144,9 +144,50 @@ func returnClients(w http.ResponseWriter, r *http.Request) {
 	w.Write(jsonClients)
 }
 
+// it'd make sense to send raw data to this socket
+// instead of a message struct
+func CommandWs(w http.ResponseWriter, r *http.Request) {
+	c, err := upgrader.Upgrade(w, r, nil)
+	if err != nil {
+		log.Print("upgrade err:", err)
+		return
+	}
+	defer c.Close()
+
+	var client Client
+	hostname := r.Header.Get("X-Client-Hostname")
+
+	for _, cl := range clients {
+		if cl.Name == hostname {
+			client = cl
+		}
+	}
+
+	id, commandChannel := client.NewCommand()
+	for {
+		_, msg, err := c.ReadMessage()
+		if err != nil {
+			if closeError, ok := err.(*websocket.CloseError); ok {
+				log.Printf("websocket closed! code: %d", closeError.Code)
+			} else {
+				log.Println("read err:", err)
+			}
+
+			//handle message removal
+			client.RemoveCommand(id)
+			break
+		}
+		commandChannel <- msg
+	}
+}
+
+func GetCommandWs(w http.ResponseWriter, r *http.Request) {}
+
 func main() {
 	flag.Parse()
 	http.HandleFunc("/ws", handle)
+	http.HandleFunc("/commandWs", CommandWs)
+	http.HandleFunc("/send", CORS(GetCommandWs))
 	http.HandleFunc("/send", CORS(send))
 	http.HandleFunc("/clients", CORS(returnClients))
 	log.Fatal(http.ListenAndServe(*addr, nil))

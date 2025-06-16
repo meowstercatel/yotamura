@@ -14,7 +14,24 @@ type Client struct {
 	Actions map[string]func(message Message) `json:"-"`
 
 	MessageChannel map[string]chan Message `json:"-"`
+	CommandChannel map[string]chan []byte  `json:"-"`
 	mu             sync.RWMutex            `json:"-"`
+}
+
+func (c *Client) NewCommand() (id string, channel chan []byte) {
+	channel = make(chan []byte, 100)
+	randString := RandString(5)
+
+	c.mu.Lock()
+	c.CommandChannel[randString] = channel
+	c.mu.Unlock()
+	return
+}
+
+func (c *Client) RemoveCommand(id string) {
+	c.mu.Lock()
+	delete(c.CommandChannel, id)
+	c.mu.Unlock()
 }
 
 func (c *Client) HandleMessages() {

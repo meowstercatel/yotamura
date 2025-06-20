@@ -16,8 +16,10 @@ type File struct {
 }
 
 type CommandData struct {
-	Command string `json:"command"`
-	Output  string `json:"output"`
+	Command       string `json:"command"`
+	Output        string `json:"output"`
+	WaitForOutput bool   `json:"wait_for_output"`
+	Websocket     bool   `json:"websocket"`
 }
 type StatsData struct {
 	Name string `json:"name"`

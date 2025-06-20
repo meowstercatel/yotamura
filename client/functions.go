@@ -5,14 +5,62 @@ import (
 	"fmt"
 	"image/jpeg"
 	"io"
+	"log"
+	"net/url"
 	"os"
+	"os/exec"
 	"yotamura/common"
 
+	"github.com/gorilla/websocket"
 	"github.com/kbinani/screenshot"
 )
 
 func (c *Client) sendError(message common.Message, err error) {
 	c.SendJsonMessage(common.CreateMessage(common.ErrorData{Type: message.Type, Error: err.Error()}))
+}
+
+func handleCommandWs(command string) {
+	u := url.URL{Scheme: "ws", Host: *addr, Path: "/commandWs"}
+	fmt.Printf("connecting to %s\n", u.String())
+
+	c, _, err := websocket.DefaultDialer.Dial(u.String(), nil)
+	if err != nil {
+		fmt.Println("dial:", err)
+		go reconnect()
+		return
+	}
+	defer c.Close()
+
+	fmt.Println("starting command")
+
+	cmd := exec.Command(command)
+	stdin, _ := cmd.StdinPipe()
+	stdout, _ := cmd.StdoutPipe()
+
+	go func() {
+		data := make([]byte, 1<<20) // Read 1MB at a time
+		amount, err := stdout.Read(data)
+		if err != nil {
+			log.Println("failed to read stdout", err)
+		}
+		log.Println("read %v\n", amount)
+		c.WriteMessage(1, data)
+	}()
+
+	go func() {
+		for {
+			_, msg, err := c.ReadMessage()
+			if err != nil {
+				fmt.Println("read:", err)
+				go reconnect()
+				return
+			}
+			_, err = stdin.Write(msg)
+			if err != nil {
+				log.Println("failed to write to stdin", err)
+			}
+		}
+	}()
 }
 
 func (c *Client) initializeHandlers() {
@@ -22,12 +70,24 @@ func (c *Client) initializeHandlers() {
 		fmt.Println("command")
 		var content common.CommandData
 		common.DecodeData(message.Data, &content)
+
+		if content.WaitForOutput {
+			ExecBackground(content.Command)
+			c.SendJsonMessage(common.CreateMessage(content))
+			return
+		}
+		if content.Websocket {
+			handleCommandWs(content.Command)
+			return
+		}
+
 		output, err := Exec(content.Command)
 		if err != nil {
 			fmt.Println(output, err)
 			c.sendError(message, err)
 			return
 		}
+
 		content.Output = string(output)
 		c.SendJsonMessage(common.CreateMessage(content))
 	}

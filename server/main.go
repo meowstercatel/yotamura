@@ -7,8 +7,11 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"strconv"
 	"yotamura/common"
 
+	"github.com/gobwas/ws"
+	"github.com/gobwas/ws/wsutil"
 	"github.com/gorilla/websocket"
 )
 
@@ -16,24 +19,9 @@ var addr = flag.String("addr", "localhost:8080", "http service address")
 
 var upgrader = websocket.Upgrader{} // use default options
 
-type Client struct {
-	*common.Client
-}
+var clients []*Client
 
-func (c *Client) HandleMessages() {
-	for {
-		message := c.GetWsMessage()
-		fmt.Println("message: ", message)
-
-		if action, ok := c.Actions[message.Type]; ok {
-			action(message)
-		}
-	}
-}
-
-var clients []Client
-
-func RemoveIndex(s []Client, index int) []Client {
+func RemoveIndex(s []*Client, index int) []*Client {
 	return append(s[:index], s[index+1:]...)
 }
 
@@ -45,11 +33,13 @@ func handle(w http.ResponseWriter, r *http.Request) {
 	}
 	defer c.Close()
 
-	client := Client{
+	client := &Client{
 		Client: &common.Client{
 			Ws:             c,
 			MessageChannel: make(map[string]chan common.Message),
 		},
+		CommandReceiveChannel: make(map[string]chan []byte),
+		CommandSendChannel:    make(map[string]chan []byte),
 	}
 	go client.initializeHandlers()
 	clients = append(clients, client)
@@ -97,8 +87,6 @@ func CORS(next http.HandlerFunc) http.HandlerFunc {
 }
 
 func send(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Access-Control-Allow-Origin", "*")
-
 	requestJson, err := io.ReadAll(r.Body)
 	if err != nil {
 		fmt.Println("failed to read request!", err)
@@ -154,8 +142,9 @@ func CommandWs(w http.ResponseWriter, r *http.Request) {
 	}
 	defer c.Close()
 
-	var client Client
+	var client *Client
 	hostname := r.Header.Get("X-Client-Hostname")
+	channelId := r.Header.Get("X-Command")
 
 	for _, cl := range clients {
 		if cl.Name == hostname {
@@ -163,7 +152,13 @@ func CommandWs(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	id, commandChannel := client.NewCommand()
+	client.NewCommand(channelId)
+
+	commandSendChannel := client.CommandSendChannel[channelId]
+	go func() {
+		data := <-commandSendChannel
+		c.WriteMessage(int(ws.OpText), data)
+	}()
 	for {
 		_, msg, err := c.ReadMessage()
 		if err != nil {
@@ -173,21 +168,75 @@ func CommandWs(w http.ResponseWriter, r *http.Request) {
 				log.Println("read err:", err)
 			}
 
-			//handle message removal
-			client.RemoveCommand(id)
+			client.RemoveCommand(channelId)
 			break
 		}
-		commandChannel <- msg
+		client.CommandReceiveChannel[channelId] <- msg
 	}
 }
 
-func GetCommandWs(w http.ResponseWriter, r *http.Request) {}
+func SendCommandWs(w http.ResponseWriter, r *http.Request) {
+	//client sends a request to this endpoint
+	//this sends a request to a given client(pc)
+	//then the client connects with /commandWs
+	//*dark magic* and now in THIS func the client(pc) communicates with the client(web).
+
+	conn, _, _, err := ws.UpgradeHTTP(r, w)
+	if err != nil {
+		// handle error
+	}
+	defer conn.Close()
+
+	clientId, err := strconv.Atoi(r.URL.Query().Get("client"))
+	if err != nil {
+		log.Println("failed to convert client id to int")
+	}
+
+	command := r.URL.Query().Get("command")
+	client := clients[clientId]
+
+	client.SendJsonMessage(common.CreateMessage(common.CommandData{Command: command, Websocket: true}))
+
+	//honestly this logic is only useful when the client:
+	//has a 10mhz cpu that can't handle anything
+	//or when the client is bombarded with commands asynchronously
+	for {
+		msg := client.GetWsMessage()
+		var commandData common.CommandData
+		if msg.Type == "CommandData" {
+			common.DecodeData(msg.Data, &commandData)
+			if commandData.Websocket {
+				break
+			}
+		}
+	}
+
+	//we can assume that the channel exists bc of the logic above
+	commandReceiveChannel := client.CommandReceiveChannel[command]
+	commandSendChannel := client.CommandSendChannel[command]
+
+	go func() {
+		data := <-commandReceiveChannel
+		err = wsutil.WriteServerMessage(conn, ws.OpText, data)
+		if err != nil {
+			// handle error
+		}
+	}()
+
+	for {
+		msg, _, err := wsutil.ReadClientData(conn)
+		if err != nil {
+			// handle error
+		}
+		commandSendChannel <- msg
+	}
+}
 
 func main() {
 	flag.Parse()
 	http.HandleFunc("/ws", handle)
 	http.HandleFunc("/commandWs", CommandWs)
-	http.HandleFunc("/send", CORS(GetCommandWs))
+	http.HandleFunc("/sendCommandWs", SendCommandWs)
 	http.HandleFunc("/send", CORS(send))
 	http.HandleFunc("/clients", CORS(returnClients))
 	log.Fatal(http.ListenAndServe(*addr, nil))

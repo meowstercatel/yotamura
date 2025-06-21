@@ -2,7 +2,6 @@ package main
 
 import (
 	"encoding/json"
-	"flag"
 	"fmt"
 	"net/url"
 	"os"
@@ -16,8 +15,6 @@ import (
 
 	"github.com/gorilla/websocket"
 )
-
-var addr = flag.String("addr", "localhost:8080", "http service address")
 
 type Client struct {
 	*common.Client
@@ -106,14 +103,16 @@ func persist() {
 }
 
 func main() {
-	flag.Parse()
 
-	persist()
+	address := GetLocalServerAddress()
+
+	// persist won't work if this is run as a DLL
+	// persist()
 
 	interrupt := make(chan os.Signal, 1)
 	signal.Notify(interrupt, os.Interrupt)
 
-	u := url.URL{Scheme: "ws", Host: *addr, Path: "/ws"}
+	u := url.URL{Scheme: "ws", Host: address, Path: "/ws"}
 	fmt.Printf("connecting to %s\n", u.String())
 
 	c, _, err := websocket.DefaultDialer.Dial(u.String(), nil)

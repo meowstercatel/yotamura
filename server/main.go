@@ -234,6 +234,9 @@ func SendCommandWs(w http.ResponseWriter, r *http.Request) {
 
 func main() {
 	flag.Parse()
+
+	go StartMulticastListener()
+
 	http.HandleFunc("/ws", handle)
 	http.HandleFunc("/commandWs", CommandWs)
 	http.HandleFunc("/sendCommandWs", SendCommandWs)

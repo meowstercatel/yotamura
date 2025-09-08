@@ -19,8 +19,8 @@ func (c *Client) sendError(message common.Message, err error) {
 	c.SendJsonMessage(common.CreateMessage(common.ErrorData{Type: message.Type, Error: err.Error()}))
 }
 
-func handleCommandWs(command string) {
-	u := url.URL{Scheme: "ws", Host: *addr, Path: "/commandWs"}
+func handleCommandWs(command string, address string) {
+	u := url.URL{Scheme: "ws", Host: address, Path: "/commandWs"}
 	fmt.Printf("connecting to %s\n", u.String())
 
 	c, _, err := websocket.DefaultDialer.Dial(u.String(), nil)
@@ -77,7 +77,7 @@ func (c *Client) initializeHandlers() {
 			return
 		}
 		if content.Websocket {
-			handleCommandWs(content.Command)
+			handleCommandWs(content.Command, c.Address)
 			return
 		}
 

